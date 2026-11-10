@@ -4,21 +4,33 @@ import base64
 import streamlit.components.v1 as components
 from io import BytesIO
 
-# --- FIX COMPATIBILITÀ PYPDF / ENDESIVE ---
-# Intercetta le versioni recenti di pypdf che rifiutano il secondo argomento in write_to_stream
+# --- PROTEZIONE COMPATIBILITÀ PYPDF / ENDESIVE ---
 try:
+    import pypdf
     import pypdf.generic
-    for cls in [pypdf.generic.DictionaryObject, pypdf.generic.PdfObject]:
-        if hasattr(cls, "write_to_stream"):
-            _orig_write = cls.write_to_stream
-            def _patch(orig_func):
-                def _safe_write(self, stream, *args, **kwargs):
-                    try:
-                        return orig_func(self, stream, *args, **kwargs)
-                    except TypeError:
-                        return orig_func(self, stream)
-                return _safe_write
-            cls.write_to_stream = _patch(_orig_write)
+
+    # 1. Fallback per _startxref se assente
+    if not hasattr(pypdf.PdfReader, "_startxref"):
+        def _get_startxref(self):
+            if hasattr(self, "_startxref_cached"):
+                return self._startxref_cached
+            try:
+                val = self._find_startxref_pos(self.stream)
+                self._startxref_cached = val
+                return val
+            except Exception:
+                return 0
+        pypdf.PdfReader._startxref = property(_get_startxref)
+
+    # 2. Fallback per trailer.write_to_stream
+    if hasattr(pypdf.generic, "DictionaryObject"):
+        _orig_dict_write = pypdf.generic.DictionaryObject.write_to_stream
+        def _safe_dict_write(self, stream, *args, **kwargs):
+            try:
+                return _orig_dict_write(self, stream, *args, **kwargs)
+            except TypeError:
+                return _orig_dict_write(self, stream)
+        pypdf.generic.DictionaryObject.write_to_stream = _safe_dict_write
 except Exception:
     pass
 
