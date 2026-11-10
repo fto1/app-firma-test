@@ -4,6 +4,14 @@ import base64
 import streamlit.components.v1 as components
 from io import BytesIO
 
+# --- RESET CACHE DI MEMORIA PYPDF ---
+try:
+    import pypdf
+    if hasattr(pypdf.PdfReader, "_startxref") and isinstance(getattr(pypdf.PdfReader, "_startxref"), property):
+        delattr(pypdf.PdfReader, "_startxref")
+except Exception:
+    pass
+
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography import x509
