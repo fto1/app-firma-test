@@ -4,6 +4,24 @@ import base64
 import streamlit.components.v1 as components
 from io import BytesIO
 
+# --- FIX COMPATIBILITÀ PYPDF / ENDESIVE ---
+# Intercetta le versioni recenti di pypdf che rifiutano il secondo argomento in write_to_stream
+try:
+    import pypdf.generic
+    for cls in [pypdf.generic.DictionaryObject, pypdf.generic.PdfObject]:
+        if hasattr(cls, "write_to_stream"):
+            _orig_write = cls.write_to_stream
+            def _patch(orig_func):
+                def _safe_write(self, stream, *args, **kwargs):
+                    try:
+                        return orig_func(self, stream, *args, **kwargs)
+                    except TypeError:
+                        return orig_func(self, stream)
+                return _safe_write
+            cls.write_to_stream = _patch(_orig_write)
+except Exception:
+    pass
+
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography import x509
@@ -12,13 +30,12 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 
 from endesive.pdf import cms
 
-# Configurazione della pagina
 st.set_page_config(page_title="Firma Digitale di Test", page_icon="✍️", layout="centered")
 
 st.title("✍️ Firma Digitale di Test (PAdES)")
 st.markdown("Personalizza i dati del firmatario, carica il file e scarica il PDF firmato.")
 
-# --- SEZIONE 1: DATI DEL FIRMATARIO (FRONTEND) ---
+# --- SEZIONE 1: DATI DEL FIRMATARIO ---
 st.subheader("1. Dati del Firmatario")
 
 col1, col2 = st.columns(2)
@@ -29,13 +46,9 @@ with col2:
 
 codice_fiscale = st.text_input("Codice Fiscale", value="RSSMRA80A01H501U", max_chars=16)
 
-# --- FUNZIONI DI SUPPORTO ---
-
 def genera_certificato_dinamico(nome, cognome, cf, password):
-    """Genera un certificato X.509 al volo in memoria con i dati forniti dall'utente."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     
-    # Formattazione del Codice Fiscale con il prefisso TINIT- richiesto per l'Italia
     cf_clean = cf.strip().upper()
     cf_formatted = cf_clean if cf_clean.startswith("TINIT-") else f"TINIT-{cf_clean}"
     
@@ -57,7 +70,6 @@ def genera_certificato_dinamico(nome, cognome, cf, password):
     )
 
 def firma_pdf_in_memoria(pdf_bytes, p12_bytes, password):
-    """Applica la firma PAdES al file PDF."""
     private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(p12_bytes, password)
     
     data_firma = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S+00\'00\'')
@@ -78,7 +90,6 @@ def firma_pdf_in_memoria(pdf_bytes, p12_bytes, password):
     return pdf_firmato.getvalue()
 
 def avvia_download_automatico(pdf_bytes, nome_file):
-    """Script JS per forzare il download automatico nel browser."""
     b64 = base64.b64encode(pdf_bytes).decode('utf-8')
     js_code = f"""
         <a id="auto-download" href="data:application/pdf;base64,{b64}" download="{nome_file}"></a>
@@ -91,35 +102,27 @@ def avvia_download_automatico(pdf_bytes, nome_file):
 # --- SEZIONE 2: UPLOAD & FIRMA ---
 st.subheader("2. Carica e Firma Documento")
 
-# Box Drag and Drop
 file_caricato = st.file_uploader("Trascina qui il file PDF o clicca per sfogliare", type=["pdf"])
 
 if file_caricato is not None:
     if not codice_fiscale or len(codice_fiscale.strip()) < 11:
         st.warning("⚠️ Inserisci un Codice Fiscale valido prima di firmare.")
     else:
-        # Pulsante unico per Firma + Download
         if st.button("✍️ Firma e Scarica PDF", type="primary", use_container_width=True):
             with st.spinner('Generazione certificato e firma del PDF in corso...'):
                 password = b"password_test_123"
                 
-                # 1. Genera certificato dinamico
                 p12_bytes = genera_certificato_dinamico(nome, cognome, codice_fiscale, password)
-                
-                # 2. Firma il PDF
                 pdf_bytes = file_caricato.read()
                 pdf_firmato_bytes = firma_pdf_in_memoria(pdf_bytes, p12_bytes, password)
                 
-                # 3. Prepara nome file
                 nome_originale = file_caricato.name
                 nome_nuovo = nome_originale.lower().replace(".pdf", "_firmato.pdf")
                 
             st.success("✅ Firma applicata con successo! Il download dovrebbe avviarsi automaticamente.")
             
-            # 4. Trigger download automatico
             avvia_download_automatico(pdf_firmato_bytes, nome_nuovo)
             
-            # Pulsante manuale di scorta
             st.download_button(
                 label="Se il download non parte, clicca qui per scaricare ⬇️",
                 data=pdf_firmato_bytes,
