@@ -4,36 +4,6 @@ import base64
 import streamlit.components.v1 as components
 from io import BytesIO
 
-# --- PROTEZIONE COMPATIBILITÀ PYPDF / ENDESIVE ---
-try:
-    import pypdf
-    import pypdf.generic
-
-    # 1. Fallback per _startxref se assente
-    if not hasattr(pypdf.PdfReader, "_startxref"):
-        def _get_startxref(self):
-            if hasattr(self, "_startxref_cached"):
-                return self._startxref_cached
-            try:
-                val = self._find_startxref_pos(self.stream)
-                self._startxref_cached = val
-                return val
-            except Exception:
-                return 0
-        pypdf.PdfReader._startxref = property(_get_startxref)
-
-    # 2. Fallback per trailer.write_to_stream
-    if hasattr(pypdf.generic, "DictionaryObject"):
-        _orig_dict_write = pypdf.generic.DictionaryObject.write_to_stream
-        def _safe_dict_write(self, stream, *args, **kwargs):
-            try:
-                return _orig_dict_write(self, stream, *args, **kwargs)
-            except TypeError:
-                return _orig_dict_write(self, stream)
-        pypdf.generic.DictionaryObject.write_to_stream = _safe_dict_write
-except Exception:
-    pass
-
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography import x509
