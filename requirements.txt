@@ -1,3 +1,4 @@
 streamlit
 cryptography
 endesive
+pypdf<5.0.0
